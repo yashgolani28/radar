@@ -10,9 +10,9 @@ class ObjectClassifier:
     def __init__(self, model_path="radar_classifier.pkl"):
         self.model_path = model_path
         self.model, self.scaler = self._load_or_create_model()
-        self.object_cache = defaultdict(lambda: deque(maxlen=10))  
-        self.feature_buffer = deque(maxlen=1000)  
-        self.history_cache = {} 
+        self.object_cache = defaultdict(lambda: deque(maxlen=10))
+        self.feature_buffer = deque(maxlen=1000)
+        self.history_cache = {}
 
     def _load_or_create_model(self):
         if os.path.exists(self.model_path):
@@ -34,7 +34,7 @@ class ObjectClassifier:
         ])
 
         labels = np.array([
-            'HUMAN', 'HUMAN', 'HUMAN', 'VEHICLE', 'VEHICLE', 
+            'HUMAN', 'HUMAN', 'HUMAN', 'VEHICLE', 'VEHICLE',
             'VEHICLE', 'VEHICLE', 'VEHICLE', 'HUMAN', 'VEHICLE', 'BICYCLE', 'HAND'
         ])
 
@@ -68,12 +68,15 @@ class ObjectClassifier:
             obj_type = classes[top_idx]
             confidence = probabilities[top_idx]
 
-            # Apply heuristics
+            if obj_type not in ["HUMAN", "VEHICLE"] or confidence < 0.3:
+                continue
+
             speed_kmh = obj.get('speed_kmh', features[0])
-            distance = obj.get('distance', features[1])
-            if obj_type == 'VEHICLE' and distance < 3 and speed_kmh < 5:
+            radar_distance = obj.get('radar_distance', features[1])
+
+            if obj_type == 'VEHICLE' and speed_kmh < 6 and radar_distance < 10:
                 obj_type = 'HUMAN'
-                confidence = min(confidence, 0.75)
+                confidence = min(confidence, 0.8)
 
             obj.update({
                 'object_id': obj_id,
@@ -83,18 +86,19 @@ class ObjectClassifier:
             })
 
             classified.append(obj)
+
         return classified
 
     def _extract_features(self, obj):
         return [
             obj.get('speed_kmh', 0.0),
-            obj.get('distance', 0.0),
+            obj.get('radar_distance', 0.0),
             abs(obj.get('velocity', 0.0)),
             obj.get('signal_level', 0.0),
             obj.get('doppler_frequency', 0.0)
         ]
 
     def _generate_id(self, obj):
-        dist = round(obj.get('distance', 0), 1)
+        dist = round(obj.get('radar_distance', 0), 1)
         vel = round(obj.get('velocity', 0), 2)
         return f"obj_{dist}_{vel}"

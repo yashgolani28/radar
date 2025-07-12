@@ -1,0 +1,24 @@
+{
+  "cooldown_seconds": 0.1,
+  "retention_days": 30,
+  "selected_camera": 0,
+  "cameras": [
+    {
+      "url": "http://192.168.1.241/axis-cgi/jpg/image.cgi?resolution=640x480",
+      "username": "root",
+      "password": "2024"
+    }
+  ],
+  "dynamic_speed_limits": {
+    "HUMAN": 8.0,
+    "CAR": 70.0,
+    "TRUCK": 50.0,
+    "BUS": 50.0,
+    "BIKE": 60.0,
+    "BICYCLE": 10.0,
+    "UNKNOWN": 50.0,
+    "default": 10.0
+  },
+  "annotation_conf_threshold": 0.5,
+  "label_format": "{type} | {speed:.1f} km/h"
+}

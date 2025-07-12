@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}System Control Panel{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+         <h2 class="text-white fw-bold">System Control</h2>
+    </div>
+    <span class="badge bg-warning fs-6">Admin Access</span>
+</div>
+
+{% if message %}
+<div class="alert alert-info alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<!-- System Status -->
+<div class="row mb-4">
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="card-title">System Status</h6>
+        <span class="badge {{ 'bg-success' if radar_status else 'bg-danger' }}">
+          {{ 'Online' if radar_status else 'Offline' }}
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="card-title">Camera Status</h6>
+        <span class="badge {{ 'bg-primary' if camera_status else 'bg-danger' }}">
+          {{ 'Connected' if camera_status else 'Disconnected' }}
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="card-title">Disk Space</h6>
+        <span class="badge bg-info">{{ disk_free }} GB Free</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Configuration -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h5 class="mb-0">System Configuration</h5>
+  </div>
+  <div class="card-body">
+    <form method="POST" novalidate>
+      <div class="row g-4">
+        <!-- Left Column -->
+        <div class="col-md-6">
+          <div class="mb-3">
+            <label for="cooldown_seconds" class="form-label">Detection Cooldown (sec)</label>
+            <input type="number" step="0.1" min="0" name="cooldown_seconds" class="form-control"
+                   value="{{ config.cooldown_seconds }}" required>
+          </div>
+          <div class="mb-3">
+            <label for="retention_days" class="form-label">Data Retention (days)</label>
+            <input type="number" min="1" name="retention_days" class="form-control"
+                   value="{{ config.retention_days }}" required>
+          </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="col-md-6">
+          <div class="mb-3">
+            <label for="annotation_conf_threshold" class="form-label">Annotation Confidence Threshold</label>
+            <input type="number" step="0.01" min="0.1" max="1.0" name="annotation_conf_threshold"
+                   class="form-control" value="{{ config.annotation_conf_threshold }}">
+          </div>
+          <div class="mb-3">
+            <label for="selected_camera" class="form-label">Active Camera</label>
+            <select class="form-select" name="selected_camera" id="selected_camera">
+              {% for cam in config.cameras %}
+              <option value="{{ loop.index0 }}" {% if config.selected_camera == loop.index0 %}selected{% endif %}>
+                  {{ cam }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dynamic Speed Limits -->
+      <div class="card mt-4">
+        <div class="card-header bg-light">
+          <h5 class="mb-0 text-primary">Dynamic Speed Limits</h5>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            {% for key, val in config.dynamic_speed_limits.items() %}
+            <div class="col-md-3">
+              <label class="form-label text-uppercase">
+                {% if key == 'default' %}
+                  Default Type
+                {% else %}
+                  {{ key }}
+                {% endif %}
+              </label>
+              <input type="number" step="0.1" name="speed_limit_{{ key }}" value="{{ val }}" class="form-control">
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Buttons Centered -->
+      <div class="d-flex justify-content-center gap-3 mt-4">
+        <button type="submit" name="action" value="update_config" class="btn btn-primary px-4">
+          Save Configuration
+        </button>
+        <button type="button" class="btn btn-primary px-4" onclick="reloadConfig()">
+          Reload Live Configuration
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- System Actions -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">System Tools</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" class="d-grid gap-2">
+                    <button type="submit" name="action" value="test_camera" class="btn btn-outline-primary">
+                        Test Camera Connection
+                    </button>
+                    <button type="submit" name="action" value="test_radar" class="btn btn-outline-secondary">
+                        Test Radar Connection
+                    </button>
+                    <button type="submit" name="action" value="backup_db" class="btn btn-outline-success">
+                        Download Database Backup
+                    </button>
+                    <button type="submit" name="action" value="cleanup_snapshots" class="btn btn-outline-warning"
+                            onclick="return confirm('Clean up old snapshots based on retention settings?')">
+                        Cleanup Old Snapshots
+                    </button>
+                    <button type="submit" name="action" value="clear_db" class="btn btn-outline-danger"
+                            onclick="return confirm('This will permanently delete ALL detection data. Continue?')">
+                        Clear All Data
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Database Restore</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="backup_file" class="form-label">Select Backup File</label>
+                        <input type="file" id="backup_file" name="backup_file" class="form-control" 
+                               accept=".sql" required>
+                    </div>
+                    <button type="submit" name="action" value="restore_db" class="btn btn-primary w-100"
+                            onclick="return confirm('This will replace the current database. Continue?')">
+                        Restore Database
+                    </button>
+                    <hr>
+                    <div class="form-text">Upload a valid PostgreSQL .sql backup file.</div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Test Camera & Radar Result -->
+{% if snapshot %}
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="mb-0">Camera Test Result</h6>
+    </div>
+    <div class="card-body text-center">
+        <img src="{{ url_for('serve_snapshot', filename=snapshot) }}" 
+             class="img-fluid rounded shadow-sm" 
+             style="max-height: 400px;" 
+             alt="Test Snapshot - {{ snapshot }}">
+        <p class="text-success mt-2 mb-0">Camera test successful!</p>
+    </div>
+</div>
+{% endif %}
+
+{% if message and "Radar test" in message %}
+<div class="card mt-4">
+  <div class="card-header">
+    <h6 class="mb-0">Radar Test Result</h6>
+  </div>
+  <div class="card-body text-center">
+    <p class="{{ 'text-success' if 'successful' in message else 'text-danger' }}">{{ message }}</p>
+  </div>
+</div>
+{% endif %}
+
+<!-- System Information -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="mb-0">System Information</h6>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <strong>Current Configuration:</strong><br>
+                <small class="text-muted">
+                    Cooldown: {{ config.cooldown_seconds }}s<br>
+                    Retention: {{ config.retention_days }} days<br>
+                    Active Camera: {{ config.selected_camera + 1 }}
+                </small>
+            </div>
+            <div class="col-md-6">
+                <strong>Available Cameras:</strong><br>
+                <small class="text-muted">
+                {% for camera in config.cameras %}
+                    Camera {{ loop.index }}: {{ camera }}<br>
+                {% endfor %}
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function reloadConfig() {
+  if (confirm("Reload configuration now?")) {
+    fetch("/api/reload_config", {
+      method: "POST",
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/json"
+      }
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.status === "ok") {
+        alert("Config reload triggered successfully.");
+      } else {
+        alert("Reload failed: " + (data.error || "unknown error"));
+      }
+    })
+    .catch(err => {
+      console.error("Reload request failed", err);
+      alert("Reload failed. See console for details.");
+    });
+  }
+}
+</script>
+
+<script>
+    // Auto-refresh status every 30 seconds
+    let statusInterval = setInterval(() => {
+        fetch('/api/status')
+            .then(response => {
+                if (!response.ok) throw new Error('Status check failed');
+                return response.json();
+            })
+            .then(data => {
+                console.log('System status updated:', data);
+            })
+            .catch(error => {
+                console.log('Status check failed:', error);
+            });
+    }, 30000);
+
+    // Clear interval on page unload
+    window.addEventListener('beforeunload', () => {
+        clearInterval(statusInterval);
+    });
+
+    // Form validation
+    document.addEventListener('DOMContentLoaded', function() {
+        const forms = document.querySelectorAll('form');
+        forms.forEach(form => {
+            form.addEventListener('submit', function(event) {
+                if (!form.checkValidity()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                form.classList.add('was-validated');
+            });
+        });
+    });
+</script>
+{% endblock %}

@@ -85,7 +85,7 @@ CAMERA_PASSWORD = "2024"
 SNAPSHOTS_DIR = "snapshots"
 
 class RadarSystem:
-    def __init__(self, port='COM7', baudrate=9600):
+    def __init__(self, port='/dev/ttyACM0', baudrate=9600):
         self.port = port
         self.baudrate = baudrate
         self.radar = None
@@ -138,7 +138,7 @@ class RadarSystem:
     def _collect_data(self):
         """Background data collection method"""
         try:
-            self.radar = OPS243CRadar(port='COM7', baudrate=9600)
+            self.radar = OPS243CRadar(port='/dev/tty/ACM0', baudrate=9600)
             if not self.radar.connect():
                 self.data_queue.put({"error": "Failed to connect to radar"})
                 self._send_status_update({'radar_connected': False, 'camera_status': 'Unknown'})

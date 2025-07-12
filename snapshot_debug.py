@@ -35,22 +35,22 @@ def check_snapshot_issue():
         cursor = conn.cursor()
         
         # Check if table exists
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='radar_logs'")
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='radar_data'")
         if cursor.fetchone():
             print("   ✅ Database table exists")
             
             # Check for speeding violations
-            cursor.execute("SELECT COUNT(*) FROM radar_logs WHERE speed_kmh > 1")
+            cursor.execute("SELECT COUNT(*) FROM radar_data WHERE speed_kmh > 1")
             speeding_count = cursor.fetchone()[0]
             print(f"   📊 Speeding violations in DB: {speeding_count}")
             
             # Check for snapshots in database
-            cursor.execute("SELECT COUNT(*) FROM radar_logs WHERE snapshot IS NOT NULL AND snapshot != ''")
+            cursor.execute("SELECT COUNT(*) FROM radar_data WHERE snapshot IS NOT NULL AND snapshot != ''")
             snapshots_in_db = cursor.fetchone()[0]
             print(f"   📷 Records with snapshots in DB: {snapshots_in_db}")
             
             # Show recent speeding violations
-            cursor.execute("SELECT timestamp, speed_kmh, snapshot FROM radar_logs WHERE speed_kmh > 1 ORDER BY timestamp DESC LIMIT 5")
+            cursor.execute("SELECT timestamp, speed_kmh, snapshot FROM radar_data WHERE speed_kmh > 1 ORDER BY timestamp DESC LIMIT 5")
             recent_violations = cursor.fetchall()
             print(f"   📋 Recent violations:")
             for i, (ts, speed, snapshot) in enumerate(recent_violations):
