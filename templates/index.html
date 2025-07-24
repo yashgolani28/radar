@@ -2,7 +2,7 @@
 {% block title %}Dashboard - Live Monitoring{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="text-white fw-bold">Detection Dashboard</h2>
+    <h2 class="fw-bold" style="color: var(--text-color);">Detection Dashboard</h2>
     <div class="d-flex align-items-center gap-2">
         <span class="badge bg-success fs-6 px-3 py-2">Live Monitoring</span>
         {% set temp = summary.pi_temperature %}
@@ -29,99 +29,72 @@
 </div>
 
 <!-- Statistics Cards -->
-<div class="row row-cols-2 row-cols-md-5 g-3 mb-4">
+<div class="row row-cols-2 row-cols-md-5 g-3 mb-4" style="color: var(--text-color);">
+  {% for label, value, color in [
+    ('Total Detections', summary.total, 'text-primary'),
+    ('Vehicles', summary.vehicles, 'text-warning'),
+    ('Pedestrians', summary.humans, 'text-info'),
+    ('Avg Speed (km/h)', summary.average_speed, 'text-danger'),
+    ('Default Speed Limit', config.dynamic_speed_limits['default'], 'text-success')
+  ] %}
   <div class="col">
     <div class="card text-center h-100">
       <div class="card-body">
-        <div class="display-6 text-primary fw-bold">{{ summary.total }}</div>
-        <p class="text-muted mb-0 small">Total Detections</p>
+        <div class="display-6 fw-bold {{ color }}">{{ value }}</div>
+        <p class="mb-0 small">{{ label }}</p>
       </div>
     </div>
   </div>
-  <div class="col">
-    <div class="card text-center h-100">
-      <div class="card-body">
-        <div class="display-6 text-warning fw-bold">{{ summary.vehicles }}</div>
-        <p class="text-muted mb-0 small">Vehicles</p>
-      </div>
-    </div>
-  </div>
-  <div class="col">
-    <div class="card text-center h-100">
-      <div class="card-body">
-        <div class="display-6 text-info fw-bold">{{ summary.humans }}</div>
-        <p class="text-muted mb-0 small">Pedestrians</p>
-      </div>
-    </div>
-  </div>
-  <div class="col">
-    <div class="card text-center h-100">
-      <div class="card-body">
-        <div class="display-6 text-danger fw-bold">{{ summary.average_speed }}</div>
-        <p class="text-muted mb-0 small">Avg Speed (km/h)</p>
-      </div>
-    </div>
-  </div>
-  <div class="col">
-    <div class="card text-center h-100">
-      <div class="card-body">
-        <div class="display-6 fw-bold text-success">
-        {{ config.dynamic_speed_limits['default'] }}
-        </div>
-        <p class="text-muted mb-0 small">Default Speed Limit</p>
-      </div>
-    </div>
-  </div>
+  {% endfor %}
 </div>
 
-<div class="text-muted small text-end me-2 mb-3">
-  Last Detection: <strong>{{ summary.last_detection }}</strong>
+<div class="text-end me-2 mb-3">
+  <small style="color: var(--text-color);">Last Detection: <strong>{{ summary.last_detection }}</strong></small>
 </div>
 
-<!-- Speed Limits by Object Type (4 above, 4 below layout) -->
+<!-- Speed Limits by Object Type -->
 <div class="card shadow-sm mb-4">
-  <div class="card-header bg-light d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold text-dark">Speed Limits by Object Type</h6>
-    <small class="text-muted">Configured thresholds</small>
+  <div class="card-header d-flex justify-content-between align-items-center" style="color: var(--text-color);">
+    <h6 class="mb-0 fw-semibold ">Speed Limits by Object Type</h6>
+    <small>Configured thresholds</small>
   </div>
   <div class="card-body py-3">
-    <div class="container-fluid">
-      <div class="row justify-content-center">
-        {% set keys = config.dynamic_speed_limits.keys()|list %}
-        {% set midpoint = (keys|length // 2 + keys|length % 2) %}
+    <div class="row">
+      {% set keys = config.dynamic_speed_limits.keys()|list %}
+      {% set midpoint = (keys|length // 2 + keys|length % 2) %}
+      {% for side in ['left', 'right'] %}
         <div class="col-md-6">
-          <div class="row g-3">
-            {% for key in keys[:midpoint] %}
-            <div class="col-12">
-              <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 bg-white shadow-sm">
-                <span class="text-muted small text-uppercase fw-semibold">{{ key }}</span>
-                <span class="text-primary fw-bold">{{ config.dynamic_speed_limits[key] }} km/h</span>
-              </div>
+            <div class="row g-3">
+            {% if side == 'left' %}
+                {% for key in keys[:midpoint] %}
+                <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 shadow-sm" style="background-color: var(--card-bg);">
+                    <span class="small text-uppercase fw-semibold">{{ key }}</span>
+                    <span class="fw-bold text-primary">{{ config.dynamic_speed_limits[key] }} km/h</span>
+                </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                {% for key in keys[midpoint:] %}
+                <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 shadow-sm" style="background-color: var(--card-bg);">
+                    <span class="small text-uppercase fw-semibold">{{ key }}</span>
+                    <span class="fw-bold text-primary">{{ config.dynamic_speed_limits[key] }} km/h</span>
+                </div>
+                </div>
+                {% endfor %}
+            {% endif %}
             </div>
-            {% endfor %}
-          </div>
         </div>
-        <div class="col-md-6">
-          <div class="row g-3">
-            {% for key in keys[midpoint:] %}
-            <div class="col-12">
-              <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 bg-white shadow-sm">
-                <span class="text-muted small text-uppercase fw-semibold">{{ key }}</span>
-                <span class="text-primary fw-bold">{{ config.dynamic_speed_limits[key] }} km/h</span>
-              </div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-      </div>
+        {% endfor %}
     </div>
   </div>
 </div>
 
 <!-- Charts Section -->
 <div class="card shadow-sm mb-4">
-  <div class="card-header bg-light d-flex justify-content-between align-items-center">
-    <h6 class="mb-0 fw-semibold text-dark">Speed Violations by Hour</h6>
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-semibold">Speed Violations by Hour</h6>
     <select class="form-select form-select-sm w-auto" id="violationDaySelector">
       <option value="1">Today</option>
       <option value="7">Last 7 Days</option>
@@ -146,15 +119,15 @@
                             <div class="spinner-border text-primary mb-2" role="status">
                                 <span class="visually-hidden">Loading...</span>
                             </div>
-                            <p class="text-muted small">Loading chart data...</p>
+                            <p class="text-body-secondary small">Loading chart data...</p>
                         </div>
                     </div>
                     <canvas id="speedChart" class="chart-canvas" style="display: none; max-height: 280px;"></canvas>
-                    <div id="speedChartError" class="chart-error text-center text-muted" style="display: none;">
+                    <div id="speedChartError" class="chart-error text-center text-body-secondary" style="display: none;">
                         <div>
                             <i class="bi bi-exclamation-triangle fs-1 text-warning mb-3"></i>
                             <p class="mb-0">No speed data available</p>
-                            <small class="text-muted">Data will appear when detections are made</small>
+                            <small class="text-body-secondary">Data will appear when detections are made</small>
                         </div>
                     </div>
                 </div>
@@ -173,15 +146,15 @@
                             <div class="spinner-border text-primary mb-2" role="status">
                                 <span class="visually-hidden">Loading...</span>
                             </div>
-                            <p class="text-muted small">Loading chart data...</p>
+                            <p class="text-body-secondary small">Loading chart data...</p>
                         </div>
                     </div>
                     <canvas id="directionChart" class="chart-canvas" style="display: none; max-height: 280px;"></canvas>
-                    <div id="directionChartError" class="chart-error text-center text-muted" style="display: none;">
+                    <div id="directionChartError" class="chart-error text-center text-body-secondary" style="display: none;">
                         <div>
                             <i class="bi bi-pie-chart fs-1 text-info mb-3"></i>
                             <p class="mb-0">No direction data available</p>
-                            <small class="text-muted">Data will appear when detections are made</small>
+                            <small class="text-body-secondary">Data will appear when detections are made</small>
                         </div>
                     </div>
                 </div>
@@ -194,7 +167,7 @@
   <!-- Live Camera -->
   <div class="col-lg-6 mb-3">
     <div class="card shadow-sm h-100">
-      <div class="card-header bg-light">
+      <div class="card-header">
         <strong>Live Camera View</strong>
       </div>
       <div class="card-body p-2 d-flex justify-content-center align-items-center" style="height: 360px;">
@@ -206,7 +179,7 @@
   <!-- Logs + Admin Snapshot -->
   <div class="col-lg-6 mb-3">
     <div class="card shadow-sm h-100">
-      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+      <div class="card-header d-flex justify-content-between align-items-center">
         <strong>Recent System Logs</strong>
         <div class="d-flex gap-2">
           <a href="{{ url_for('view_logs') }}" class="btn btn-sm btn-outline-primary">View All</a>
@@ -217,7 +190,7 @@
       </div>
       <div class="card-body" id="logContent"
            style="max-height: 360px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
-        <div class="text-muted">Loading logs...</div>
+        <div class="text-body">Loading logs...</div>
       </div>
     </div>
   </div>
@@ -273,9 +246,9 @@ function triggerManualSnapshot() {
                                  alt="Detection"
                                  onclick="showImageModal('{{ snap.image }}', '{{ snap.label }}')">
                         {% else %}
-                            <div class="d-flex align-items-center justify-content-center h-100 bg-light" 
-                                 style="border-radius: 16px 0 0 16px;">
-                                <span class="text-muted small">No Image</span>
+                            <div class="d-flex align-items-center justify-content-center h-100" 
+                                style="background-color: var(--card-bg); border-radius: 16px 0 0 16px;">
+                                <span class="text-body-secondary small">No Image</span>
                             </div>
                         {% endif %}
                     </div>
@@ -295,7 +268,7 @@ function triggerManualSnapshot() {
                                     <div class="col-6"><strong>Direction:</strong> {{ snap.direction }}</div>
                                     <div class="col-6"><strong>Radar Distance:</strong> {{ snap.radar_distance }} m</div>
                                     <div class="col-6"><strong>Visual Distance:</strong> {{ snap.visual_distance }} m</div>
-                                    <div class="col-12"><strong>Time:</strong> {{ snap.datetime[-8:] }}</div>
+                                    <div class="col-12"><strong>Time:</strong>{{ snap.datetime.strftime("%H:%M:%S") if snap.datetime else "N/A" }}</div>
                                 </div>
                             </div>
                         </div>
@@ -308,9 +281,9 @@ function triggerManualSnapshot() {
 {% else %}
     <div class="card">
         <div class="card-body text-center py-5">
-            <div class="display-6 text-muted mb-3">📡</div>
-            <h5 class="text-muted">No Recent Detections</h5>
-            <p class="text-muted">System is monitoring... New detections will appear here.</p>
+            <div class="display-6 text-body-secondary mb-3">📡</div>
+            <h5 class="text-body-secondary">No Recent Detections</h5>
+            <p class="text-body-secondary">System is monitoring... New detections will appear here.</p>
         </div>
     </div>
 {% endif %}

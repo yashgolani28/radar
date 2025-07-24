@@ -17,7 +17,7 @@ MAX_OBJECTS = 5
 class MultiObjectProcessor:
     def __init__(self):
         self.tracker = ObjectTracker()
-        self.classifier = ObjectClassifier()
+        self.classifier = ObjectClassifier(model_path="radar_lightgbm_model.pkl")
         self.fft_history = deque(maxlen=2)
         self.prev_peaks = []
         self.prev_time = None
@@ -30,7 +30,7 @@ class MultiObjectProcessor:
         except json.JSONDecodeError:
             return None
         return None
-    
+
     def estimate_velocities_from_peaks(self, current_peaks, current_time):
         velocities = {}
 

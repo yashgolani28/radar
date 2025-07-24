@@ -2,12 +2,15 @@ import time
 import numpy as np
 import os
 import joblib
-from sklearn.ensemble import RandomForestClassifier
+import lightgbm as lgb
+import pandas as pd 
 from sklearn.preprocessing import StandardScaler
 from collections import defaultdict, deque
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 class ObjectClassifier:
-    def __init__(self, model_path="radar_classifier.pkl"):
+    def __init__(self, model_path="radar_lightgbm_model.pkl"):
         self.model_path = model_path
         self.model, self.scaler = self._load_or_create_model()
         self.object_cache = defaultdict(lambda: deque(maxlen=10))
@@ -18,6 +21,7 @@ class ObjectClassifier:
         if os.path.exists(self.model_path):
             return joblib.load(self.model_path)
 
+        # Fallback model (dummy training if no model found)
         training_data = np.array([
             [0.0, 0.5, 0.0, 25, 0.1],
             [2.5, 1.2, 0.7, 35, 0.8],
@@ -32,22 +36,20 @@ class ObjectClassifier:
             [12.0, 8.0, 3.3, 65, 8.5],
             [0.5, 0.8, 0.1, 30, 0.3],
         ])
-
         labels = np.array([
             'HUMAN', 'HUMAN', 'HUMAN', 'VEHICLE', 'VEHICLE',
-            'VEHICLE', 'VEHICLE', 'VEHICLE', 'HUMAN', 'VEHICLE', 'BICYCLE', 'HAND'
+            'VEHICLE', 'VEHICLE', 'VEHICLE', 'HUMAN', 'VEHICLE', 'BICYCLE', 'UNKNOWN'
         ])
-
-        model = RandomForestClassifier(
-            n_estimators=50,
-            max_depth=8,
-            min_samples_split=5,
-            random_state=42,
-            n_jobs=-1
-        )
 
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(training_data)
+
+        model = lgb.LGBMClassifier(
+            n_estimators=50,
+            max_depth=8,
+            learning_rate=0.1,
+            objective='multiclass'
+        )
         model.fit(X_scaled, labels)
 
         joblib.dump((model, scaler), self.model_path)
@@ -59,8 +61,10 @@ class ObjectClassifier:
 
         for obj in objects:
             features = self._extract_features(obj)
-            obj_id = self._generate_id(obj)
-            features_scaled = self.scaler.transform([features])
+            obj_id = self._generate_id(obj)  
+            feature_names = ["speed_kmh", "radar_distance", "velocity", "signal_level", "doppler_frequency"]
+            df = pd.DataFrame([features], columns=feature_names)
+            features_scaled = self.scaler.transform(df)
             probabilities = self.model.predict_proba(features_scaled)[0]
             classes = self.model.classes_
 
@@ -68,9 +72,7 @@ class ObjectClassifier:
             obj_type = classes[top_idx]
             confidence = probabilities[top_idx]
 
-            if obj_type not in ["HUMAN", "VEHICLE"] or confidence < 0.3:
-                continue
-
+            # No longer filtering UNKNOWN
             speed_kmh = obj.get('speed_kmh', features[0])
             radar_distance = obj.get('radar_distance', features[1])
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme | default('light') }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,35 +15,69 @@
             --shadow-primary: 0 8px 32px rgba(0,0,0,0.1);
             --shadow-hover: 0 12px 40px rgba(102,126,234,0.3);
             --shadow-intense: 0 20px 60px rgba(0,0,0,0.2);
+
+            /* Theme variables for light mode */
+            --primary-bg: #eaf1f9;            /* soft light blue */
+            --card-bg: #ffffff;
+            --text-color: #1a202c;
+            --form-bg: #f8fafc;
+            --border-color: #cbd5e0;
+            --hover-bg: #dbe7f3;
+            --footer-bg: #dde6f0;
+            --navbar-bg: #f5faff;
         }
 
-        * { 
-            box-sizing: border-box; 
+        [data-theme="dark"] {
+            --primary-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            --secondary-gradient: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+            --glass-bg: rgba(30,41,59,0.9);
+            --glass-bg-dark: rgba(15,23,42,1);
+            --glass-border: rgba(255,255,255,0.1);
+            --shadow-primary: 0 8px 32px rgba(0,0,0,0.3);
+            --shadow-hover: 0 12px 40px rgba(29,78,216,0.3);
+            --shadow-intense: 0 20px 60px rgba(0,0,0,0.4);
+
+            /* Theme variables for dark mode */
+            --primary-bg: #0e1a2b;            /* dark navy */
+            --card-bg: #1a2238;              /* dark blue-gray */
+            --text-color: #f1f5f9;
+            --form-bg: #1e2a3c;
+            --border-color: #334155;
+            --hover-bg: rgba(255,255,255,0.05);
+            --footer-bg: #0d1726;
+            --navbar-bg: rgba(14,26,43,0.95);
+        }
+
+        * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
 
-        body { 
-            background: var(--primary-gradient);
+        body {
+            background-color: var(--primary-bg);
+            color: var(--text-color);
             min-height: 100vh;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
             overflow-x: hidden;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
 
-        body::before {
+        /* Only show gradient background in light mode */
+        body:not([data-theme="dark"])::before {
             content: '';
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: 
-                radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%);
-            z-index: -1;
-            animation: gradientShift 15s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 0;
+            background:
+                radial-gradient(circle at 20% 80%, rgba(102, 126, 234, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(90, 111, 216, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.06) 0%, transparent 50%);
         }
 
         @keyframes gradientShift {
@@ -52,9 +86,9 @@
         }
 
         .navbar { 
-            background: var(--glass-bg-dark);
+            background-color: var(--navbar-bg);
             backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--border-color);
             box-shadow: var(--shadow-primary);
             position: sticky;
             top: 0;
@@ -90,6 +124,7 @@
         }
 
         .nav-link {
+            color: var(--text-color) !important;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 12px;
             margin: 0 4px;
@@ -115,22 +150,23 @@
         }
 
         .nav-link:hover {
-            background: rgba(255,255,255,0.15);
+            background: var(--hover-bg);
             backdrop-filter: blur(10px);
             transform: translateY(-2px);
-            color: #fff;
+            color: var(--text-color) !important;
         }
 
         .nav-link.active {
             background: var(--secondary-gradient);
-            color: #fff;
-            box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+            color: #fff !important;
+            box-shadow: 0 4px 15px rgba(77, 182, 252, 0.4);
         }
 
         .dropdown-menu {
-            background: var(--glass-bg);
+            background-color: var(--card-bg);
+            color: var(--text-color);
             backdrop-filter: blur(25px);
-            border: 1px solid var(--glass-border);
+            border: 1px solid var(--border-color);
             border-radius: 16px;
             box-shadow: var(--shadow-intense);
             padding: 8px;
@@ -138,6 +174,7 @@
         }
 
         .dropdown-item {
+            color: var(--text-color);
             border-radius: 10px;
             margin: 2px 0;
             transition: all 0.3s ease;
@@ -154,10 +191,11 @@
         .card { 
             border: none; 
             box-shadow: var(--shadow-primary);
-            background: var(--glass-bg);
+            background-color: var(--card-bg);
+            color: var(--text-color);
             backdrop-filter: blur(20px);
             border-radius: 24px;
-            border: 1px solid var(--glass-border);
+            border: 1px solid var(--border-color);
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             position: relative;
@@ -186,9 +224,10 @@
 
         .card-header {
             background: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(245,87,108,0.1));
-            border-bottom: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--border-color);
             padding: 1.5rem;
             font-weight: 600;
+            color: var(--text-color);
         }
 
         .chart-container {
@@ -209,7 +248,8 @@
             justify-content: center;
             height: 100%;
             min-height: 200px;
-            color: #666;
+            color: var(--text-color);
+            opacity: 0.6;
             font-style: italic;
         }
 
@@ -220,9 +260,10 @@
             padding: 12px 32px;
             font-weight: 600;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+            box-shadow: 0 4px 15px rgba(72, 180, 243, 0.4);
             position: relative;
             overflow: hidden;
+            color: white;
         }
 
         .btn-primary::before {
@@ -245,12 +286,13 @@
 
         .btn-primary:hover {
             transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(245, 87, 108, 0.6);
-            background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);  /* updated shadow */
+            background: linear-gradient(135deg, #5a6fd8 0%, #667eea 100%);
         }
 
         .btn-outline-light {
-            border: 2px solid var(--glass-border);
+            border: 2px solid var(--border-color);
+            color: var(--text-color);
             transition: all 0.3s ease;
             border-radius: 20px;
             font-weight: 500;
@@ -258,10 +300,23 @@
         }
 
         .btn-outline-light:hover {
-            background: rgba(255,255,255,0.2);
+            background: var(--hover-bg);
+            color: var(--text-color);
             backdrop-filter: blur(10px);
             transform: translateY(-2px);
-            border-color: rgba(255,255,255,0.4);
+            border-color: var(--border-color);
+        }
+
+        .btn-secondary {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--hover-bg);
+            color: var(--text-color);
+            border-color: var(--border-color);
         }
 
         .modal-backdrop {
@@ -270,16 +325,17 @@
         }
 
         .modal-content {
-            background: var(--glass-bg);
+            background-color: var(--card-bg);
+            color: var(--text-color);
             backdrop-filter: blur(25px);
-            border: 1px solid var(--glass-border);
+            border: 1px solid var(--border-color);
             border-radius: 24px;
             box-shadow: var(--shadow-intense);
             overflow: hidden;
         }
 
         .modal-header {
-            border-bottom: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--border-color);
             background: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(245,87,108,0.1));
             padding: 1.5rem;
         }
@@ -318,10 +374,20 @@
             border: 1px solid rgba(25, 135, 84, 0.2);
         }
 
+        [data-theme="dark"] .alert-success {
+            background: rgba(25, 135, 84, 0.2);
+            color: #a3e635;
+        }
+
         .alert-danger {
             background: rgba(220, 53, 69, 0.1);
             color: #842029;
             border: 1px solid rgba(220, 53, 69, 0.2);
+        }
+
+        [data-theme="dark"] .alert-danger {
+            background: rgba(220, 53, 69, 0.2);
+            color: #fca5a5;
         }
 
         .alert-warning {
@@ -330,12 +396,23 @@
             border: 1px solid rgba(255, 193, 7, 0.2);
         }
 
+        [data-theme="dark"] .alert-warning {
+            background: rgba(255, 193, 7, 0.2);
+            color: #fde047;
+        }
+
         footer {
-            background: var(--glass-bg-dark);
+            background: var(--glass-bg);
             backdrop-filter: blur(20px);
             border-top: 1px solid var(--glass-border);
             margin-top: 4rem;
             padding: 2rem 0;
+            color: var(--text-color);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        
+        footer small {
+            color: var(--text-color);
         }
 
         .status-indicator {
@@ -403,32 +480,49 @@
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            box-shadow: 0 2px 8px rgba(245, 87, 108, 0.3);
+            box-shadow: 0 2px 8px rgba(117, 199, 253, 0.3);
         }
 
         .form-control {
             border-radius: 12px;
-            border: 2px solid var(--glass-border);
-            background: rgba(255,255,255,0.9);
+            border: 2px solid var(--border-color);
+            background-color: var(--form-bg);
+            color: var(--text-color);
             backdrop-filter: blur(10px);
             transition: all 0.3s ease;
             padding: 12px 16px;
         }
 
         .form-control:focus {
-            border-color: #f5576c;
-            box-shadow: 0 0 0 0.2rem rgba(245, 87, 108, 0.25);
-            background: rgba(255,255,255,0.95);
+            border-color: #57b6f5;
+            box-shadow: 0 0 0 0.2rem rgba(87, 182, 245, 0.25);
+            background-color: var(--form-bg);
+            color: var(--text-color);
         }
 
         .form-label {
             font-weight: 600;
-            color: #333;
+            color: var(--text-color);
             margin-bottom: 8px;
         }
 
+        .form-select {
+            background-color: var(--form-bg);
+            color: var(--text-color);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+        }
+
+        .form-select:focus {
+            border-color: #57aef5;
+            box-shadow: 0 0 0 0.2rem rgba(87, 187, 245, 0.25);
+            background-color: var(--form-bg);
+            color: var(--text-color);
+        }
+
         .table {
-            background: var(--glass-bg);
+            background-color: var(--card-bg);
+            color: var(--text-color);
             backdrop-filter: blur(15px);
             border-radius: 16px;
             overflow: hidden;
@@ -440,16 +534,18 @@
             border: none;
             font-weight: 600;
             padding: 1rem;
+            color: var(--text-color);
         }
 
         .table td {
             border: none;
             padding: 1rem;
-            border-bottom: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
         }
 
         .table-hover tbody tr:hover {
-            background: rgba(245,87,108,0.05);
+            background-color: var(--hover-bg);
         }
 
         .navbar-toggler {
@@ -463,6 +559,27 @@
 
         .navbar-toggler-icon {
             background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.8%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='m4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+        }
+
+        [data-theme="dark"] .navbar-toggler-icon {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28226, 232, 240, 0.8%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='m4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+        }
+
+        .form-check-input:checked {
+            background-color: #f5576c;
+            border-color: #f5576c;
+        }
+
+        .form-check-label {
+            color: var(--text-color);
+        }
+
+        .btn-close {
+            filter: var(--bs-btn-close-white-filter);
+        }
+
+        [data-theme="dark"] .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
         }
 
         @media (max-width: 768px) {
@@ -519,17 +636,13 @@
         }
         
         ::-webkit-scrollbar-track { 
-            background: rgba(255,255,255,0.1);
+            background: var(--card-bg);
             border-radius: 5px;
         }
         
         ::-webkit-scrollbar-thumb { 
-            background: var(--secondary-gradient);
+            background: var(--border-color);
             border-radius: 5px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
         }
 
         .fade-enter {
@@ -618,6 +731,12 @@
                                     <a class="dropdown-item" href="#" id="add-user-btn">Add New User</a>
                                 </li>
                                 {% endif %}
+                                <li class="nav-item d-flex align-items-center ms-2">
+                                    <div class="form-check form-switch text-white">
+                                        <input class="form-check-input" type="checkbox" id="themeToggle" onchange="toggleTheme()">
+                                        <label class="form-check-label" for="themeToggle">Dark Mode</label>
+                                    </div>
+                                </li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
                                     <form method="POST" action="{{ url_for('logout') }}" class="d-inline">
@@ -658,7 +777,7 @@
         <div class="container">
             <div class="row">
                 <div class="col-md-6 text-md-start">
-                    <small>&copy; {{ now.year if now else '2024' }} Radar Detection System</small>
+                    <small>&copy; {{ now.year if now else '2025' }} Radar Detection System</small>
                 </div>
                 <div class="col-md-6 text-md-end">
                     <small>
@@ -1128,7 +1247,24 @@
             }
         };
     </script>
+    <script>
+    function applyTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("theme", theme);
+      const toggle = document.getElementById("themeToggle");
+      if (toggle) toggle.checked = theme === "dark";
+    }
 
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme") || "light";
+      applyTheme(current === "dark" ? "light" : "dark");
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const saved = localStorage.getItem("theme") || "light";
+      applyTheme(saved);
+    });
+  </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

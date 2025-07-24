@@ -16,9 +16,13 @@ from classify_objects import ObjectClassifier
 from camera import capture_snapshot
 from bounding_box import annotate_speeding_object, annotate_async
 from logger import logger  
+from led_display import SpeedDisplay
 from threading import Thread
 from collections import defaultdict, deque
 from config_utils import load_config # type: ignore
+import atexit
+import signal
+import sys
 
 config = load_config()
 tracker = ObjectTracker(
@@ -28,7 +32,25 @@ tracker = ObjectTracker(
 frame_buffer = deque(maxlen=6)
 speeding_buffer = defaultdict(lambda: deque(maxlen=5))
 _last_reload_time = 0
+led_display = SpeedDisplay()
 
+radar = None  
+
+def cleanup():
+    global radar
+    if radar and radar.ser and radar.ser.is_open:
+        logger.info("Cleaning up radar connection...")
+        radar.stop()
+
+atexit.register(cleanup)
+
+def handle_exit(signum, frame):
+    logger.info(f"Received signal {signum}, exiting...")
+    cleanup()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handle_exit)
+signal.signal(signal.SIGINT, handle_exit)
 
 def compute_sharpness(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -55,12 +77,27 @@ def should_reload_config():
         return False
 
 def main():
-    global config  # use the global config loaded at top
+    global config, radar
     logger.info("Starting radar detection system with enhanced output and classification...")
 
-    radar = OPS243CRadar(port='/dev/ttyACM0', baudrate=9600)
-    if not radar.connect():
-        logger.critical("Failed to connect to radar")
+    for _ in range(20):
+        if os.path.exists("/dev/radar"):
+            print("[INFO] /dev/radar detected.")
+            break
+        print("[WAIT] Waiting for /dev/radar to be available...")
+        time.sleep(0.5)
+    else:
+        print("[FATAL] /dev/radar never appeared.")
+        exit(1)
+
+    for i in range(3):
+        radar = OPS243CRadar(port='/dev/ttyACM0', baudrate=9600)
+        if radar.connect():
+            break
+        logger.warning(f"[Radar Connect] Attempt {i+1} failed.")
+        time.sleep(1)
+    else:
+        logger.critical("Radar reconnect failed after 3 attempts.")
         return
 
     radar.configure_radar()
@@ -70,10 +107,6 @@ def main():
     last_snapshot_ids = {}
     last_snapshot_times = {}  
     COOLDOWN_SECONDS = 0.05
-
-    CAMERA_URL = "http://192.168.1.241/axis-cgi/jpg/image.cgi?resolution=640x480"
-    CAMERA_USERNAME = "root"
-    CAMERA_PASSWORD = "2024"
 
     error_count = 0
     max_errors = 5
@@ -239,20 +272,29 @@ def main():
                         if should_trigger:
                             last_taken = last_snapshot_ids.get(obj_id, 0)
                             cooldown = config.get("cooldown_seconds", COOLDOWN_SECONDS)
+                            Thread(target=led_display.display_speed, args=(obj["type"], obj["speed_kmh"])).start()
 
                             if now - last_taken < cooldown:
                                 logger.info(f"[SKIP] Snapshot cooldown active for {obj_id} ({now - last_taken:.2f}s < {cooldown}s)")
                             else:
                                 last_snapshot_ids[obj_id] = now
 
+                                cam = config.get("cameras", [{}])[config.get("selected_camera", 0)]
+                                cam_url = cam.get("snapshot_url") or cam.get("url")
+                                cam_user = cam.get("username")
+                                cam_pass = cam.get("password")
                                 # Capture fresh snapshot
                                 raw_jpg_path = capture_snapshot(
-                                    camera_url=CAMERA_URL,
-                                    username=CAMERA_USERNAME,
-                                    password=CAMERA_PASSWORD
+                                    camera_url=cam_url,
+                                    username=cam_user,
+                                    password=cam_pass
                                 )
 
-                                if raw_jpg_path and os.path.exists(raw_jpg_path):
+                                if not raw_jpg_path:
+                                    logger.error("[CAMERA] Snapshot capture returned None.")
+                                elif not os.path.exists(raw_jpg_path):
+                                    logger.error(f"[CAMERA] Snapshot file does not exist: {raw_jpg_path}")
+                                else:
                                     try:
                                         frame = cv2.imread(raw_jpg_path)
                                         if frame is not None:
@@ -297,20 +339,20 @@ def main():
                                                 direction, signal_level, doppler_frequency, snapshot_path
                                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                         """, (
-                                            obj['timestamp'],
-                                            datetime.fromtimestamp(obj['timestamp']).strftime("%Y-%m-%d %H:%M:%S"),
+                                            float(obj['timestamp']),
+                                            datetime.fromtimestamp(float(obj['timestamp'])).strftime("%Y-%m-%d %H:%M:%S"),
                                             obj['sensor'],
                                             obj['object_id'],
                                             obj['type'],
-                                            obj['confidence'],
-                                            obj['speed_kmh'],
-                                            obj['velocity'],
-                                            obj['distance'],
-                                            obj['radar_distance'],
-                                            obj['visual_distance'],
+                                            float(obj['confidence']),
+                                            float(obj['speed_kmh']),
+                                            float(obj['velocity']),
+                                            float(obj['distance']),
+                                            float(obj['radar_distance']),
+                                            float(obj['visual_distance']),
                                             obj['direction'],
-                                            obj['signal_level'],
-                                            obj['doppler_frequency'],
+                                            float(obj['signal_level']),
+                                            float(obj['doppler_frequency']),
                                             snapshot_path
                                         ))
                                         conn.commit()
@@ -333,6 +375,8 @@ def main():
                 time.sleep(0.2)  
             else:
                 time.sleep(0.05)
+            if time.time() - led_display.last_update_time > led_display.idle_timeout:
+                led_display.show_idle()
 
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received. Stopping radar.")

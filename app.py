@@ -4,6 +4,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from requests.auth import HTTPDigestAuth
 from report import generate_pdf_report
+from sklearn.preprocessing import StandardScaler
+import lightgbm as lgb
 import requests
 import psycopg2
 import psycopg2.extras
@@ -41,8 +43,11 @@ camera_capture = None
 last_frame = None
 camera_lock = threading.Lock()
 camera_frame = None
-camera_url = "rtsp://root:2024@192.168.1.241/axis-media/media.amp?streamprofile=stream1"
-camera_auth = HTTPDigestAuth("root", "2024")
+config = load_config()
+selected = config.get("selected_camera", 0)
+cam = config.get("cameras", [{}])[selected] if isinstance(config.get("cameras"), list) else {}
+camera_url = cam.get("url")
+camera_auth = HTTPDigestAuth(cam.get("username"), cam.get("password")) if cam.get("username") else None
 
 # Configuration
 SNAPSHOT_FOLDER = "snapshots"
@@ -76,6 +81,41 @@ def get_user_by_username(username):
         cursor.execute("SELECT id, username, password_hash, role FROM users WHERE username = %s", (username,))
         row = cursor.fetchone()
         return User(*row) if row else None
+    
+def save_cameras_to_db(cameras, selected_idx):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cameras")
+        for i, cam in enumerate(cameras):
+            cursor.execute("""
+                INSERT INTO cameras (url, username, password, is_active, stream_type)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                cam.get("url"),
+                cam.get("username"),
+                cam.get("password"),
+                i == selected_idx,
+                cam.get("stream_type", "mjpeg")
+            ))
+        conn.commit()
+
+def load_cameras_from_db():
+    with get_db_connection() as conn:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cursor.execute("SELECT url, username, password, is_active, stream_type FROM cameras ORDER BY id")
+        rows = cursor.fetchall()
+        cameras = []
+        selected = 0
+        for i, row in enumerate(rows):
+            cameras.append({
+                "url": row["url"],
+                "username": row["username"],
+                "password": row["password"],
+                "stream_type": row["stream_type"] or "mjpeg"
+            })
+            if row["is_active"]:
+                selected = i
+        return cameras, selected
 
 @contextmanager
 def get_db_connection():
@@ -209,6 +249,37 @@ def ensure_directories():
     for directory in [SNAPSHOT_FOLDER, BACKUP_FOLDER]:
         os.makedirs(directory, exist_ok=True)
 
+def save_model_metadata(accuracy, method):
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO model_info (accuracy, method, updated_at) VALUES (%s, %s, %s)",
+                           (accuracy, method, datetime.now()))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"[MODEL INFO SAVE ERROR] {e}")
+
+def get_model_metadata():
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cursor.execute("SELECT * FROM model_info ORDER BY updated_at DESC LIMIT 2")
+            rows = cursor.fetchall()
+            if not rows:
+                return None
+            latest = rows[0]
+            prev = rows[1] if len(rows) > 1 else None
+            change = (latest['accuracy'] - prev['accuracy']) if prev else None
+            return {
+                "accuracy": latest['accuracy'],
+                "updated_at": latest['updated_at'].strftime("%Y-%m-%d %H:%M:%S"),
+                "method": latest['method'],
+                "change": round(change, 2) if change is not None else None
+            }
+    except Exception as e:
+        logger.error(f"[MODEL INFO LOAD ERROR] {e}")
+        return None
+
 def validate_snapshots():
     """Validate snapshot paths in database and clean up missing files"""
     try:
@@ -272,27 +343,88 @@ def create_app():
     @login_required
     def camera_feed():
         def generate():
-            frame_path = "/home/pi/radar/live.jpg"
-            while True:
-                try:
-                    if not os.path.exists(frame_path):
-                        time.sleep(0.1)
-                        continue
+            try:
+                config = load_config()
+                cameras, selected = load_cameras_from_db()
+                cam = cameras[selected] if cameras and selected < len(cameras) else {}
 
-                    with open(frame_path, "rb") as f:
-                        frame = f.read()
+                url = cam.get("url")
+                username = cam.get("username")
+                password = cam.get("password")
+                stream_type = cam.get("stream_type", "mjpeg").lower()
+                auth = HTTPDigestAuth(username, password) if username and password else None
+                auth_str = f"{username}:{password}@" if username and password else ""
 
-                    # Validate the JPEG
-                    if frame.startswith(b'\xff\xd8') and frame.endswith(b'\xff\xd9'):
-                        yield (b'--frame\r\n'
-                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                if not url:
+                    return
+
+                # RTSP stream (MJPEG)
+                if stream_type == "rtsp":
+                    auth_str = f"{username}:{password}@" if username and password else ""
+                    if url.startswith("rtsp://") and "@" not in url and auth_str:
+                        rtsp_url = url.replace("rtsp://", f"rtsp://{auth_str}")
                     else:
-                        logger.warning("Invalid frame read — skipping")
+                        rtsp_url = url
 
-                    time.sleep(0.1)
-                except Exception as e:
-                    logger.error(f"[CAMERA FEED] Error: {e}")
-                    time.sleep(0.2)
+                    ffmpeg_cmd = [
+                        "ffmpeg",
+                        "-rtsp_transport", "tcp",
+                        "-user_agent", "Mozilla/5.0",
+                        "-i", rtsp_url,
+                        "-f", "mjpeg",
+                        "-qscale:v", "2",
+                        "-r", "5",
+                        "-"
+                    ]
+                    process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                    buffer = b""
+                    while True:
+                        chunk = process.stdout.read(4096)
+                        if not chunk:
+                            break
+                        buffer += chunk
+                        start = buffer.find(b'\xff\xd8')
+                        end = buffer.find(b'\xff\xd9')
+                        if start != -1 and end != -1 and end > start:
+                            frame = buffer[start:end+2]
+                            buffer = buffer[end+2:]
+                            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+                    process.kill()
+
+                # Snapshot fallback
+                elif stream_type == "snapshot":
+                    while True:
+                        try:
+                            response = requests.get(url, auth=auth, timeout=5)
+                            if response.status_code == 200 and response.content.startswith(b'\xff\xd8'):
+                                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + response.content + b"\r\n")
+                            else:
+                                logger.warning(f"[CAMERA_FEED] Snapshot failed, status={response.status_code}")
+                        except Exception as e:
+                            logger.error(f"[CAMERA_FEED] Snapshot error: {e}")
+                        time.sleep(0.5)
+
+                # MJPEG stream proxy
+                else:
+                    with requests.get(url, auth=auth, stream=True, timeout=10) as r:
+                        if r.status_code != 200:
+                            logger.error(f"[CAMERA_FEED] MJPEG stream returned status {r.status_code}")
+                            return
+                        logger.info("[CAMERA_FEED] Connected to MJPEG stream.")
+                        buffer = b""
+                        for chunk in r.iter_content(chunk_size=4096):
+                            if not chunk:
+                                continue
+                            buffer += chunk
+                            start = buffer.find(b'\xff\xd8')
+                            end = buffer.find(b'\xff\xd9')
+                            if start != -1 and end != -1 and end > start:
+                                frame = buffer[start:end+2]
+                                buffer = buffer[end+2:]
+                                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+            except Exception as e:
+                logger.exception(f"[CAMERA_FEED] Fatal error: {e}")
+                time.sleep(2)
 
         return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
     
@@ -321,8 +453,14 @@ def create_app():
             now = time.time()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            snapshot_url = "http://192.168.1.241/axis-cgi/jpg/image.cgi"
-            auth = HTTPDigestAuth("root", "2024")
+            config = load_config()
+            selected = config.get("selected_camera", 0)
+            cam = config.get("cameras", [{}])[selected] if isinstance(config.get("cameras"), list) else {}
+
+            snapshot_url = cam.get("url")
+            username = cam.get("username")
+            password = cam.get("password")
+            auth = HTTPDigestAuth(username, password) if username and password else None
             response = requests.get(snapshot_url, auth=auth, timeout=5)
 
             if response.status_code != 200 or not response.content:
@@ -466,8 +604,8 @@ def create_app():
                 cursor.execute("""
                     SELECT 
                         COUNT(*) as total,
-                        SUM(CASE WHEN UPPER(COALESCE(type, '')) LIKE '%HUMAN%' OR UPPER(COALESCE(type, '')) LIKE '%PERSON%' THEN 1 ELSE 0 END) as humans,
-                        SUM(CASE WHEN UPPER(COALESCE(type, '')) LIKE '%VEHICLE%' OR UPPER(COALESCE(type, '')) LIKE '%CAR%' THEN 1 ELSE 0 END) as vehicles,
+                        SUM(CASE WHEN LOWER(COALESCE(type, '')) LIKE '%human%' OR LOWER(COALESCE(type, '')) LIKE '%person%' THEN 1 ELSE 0 END) as humans,
+                        SUM(CASE WHEN LOWER(COALESCE(type, '')) LIKE '%vehicle%' OR LOWER(COALESCE(type, '')) LIKE '%car%' THEN 1 ELSE 0 END) as vehicles,
                         AVG(CASE WHEN speed_kmh IS NOT NULL AND speed_kmh >= 0 THEN speed_kmh END) as avg_speed,
                         MAX(datetime) as last_detection
                     FROM radar_data
@@ -1009,6 +1147,71 @@ def create_app():
             logger.error(f"[EXPORT_FILTERED_PDF_ERROR] {e}")
             return str(e), 500
     
+    @app.route("/retrain_model", methods=["POST"])
+    @login_required
+    def retrain_model():
+        if not is_admin():
+            return jsonify({"error": "Unauthorized"}), 403
+
+        try:
+            logger.info("[MODEL] Retraining LightGBM model from DB...")
+            result = subprocess.run(["python3", "train_lightgbm.py"], capture_output=True, text=True)
+
+            if result.returncode == 0:
+                logger.info("[MODEL] Retraining completed successfully.")
+                # Extract reported accuracy from stdout
+                for line in result.stdout.splitlines():
+                    if line.startswith("ACCURACY:"):
+                        acc = float(line.strip().split(":")[1])
+                        save_model_metadata(acc, "retrain")
+                        break
+                return jsonify({"status": "ok", "message": "Model retrained successfully."})
+            else:
+                logger.error(f"[MODEL] Retrain failed: {result.stderr}")
+                return jsonify({"error": "Retraining failed.", "details": result.stderr}), 500
+        except Exception as e:
+            logger.exception(f"[RETRAIN ERROR] {e}")
+            return jsonify({"error": "Internal server error."}), 500
+
+    @app.route("/upload_model", methods=["POST"])
+    @login_required
+    def upload_model():
+        if not is_admin():
+            return jsonify({"error": "Unauthorized"}), 403
+
+        if "model_file" not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files["model_file"]
+
+        if not file.filename.endswith(".pkl"):
+            return jsonify({"error": "File must be a .pkl"}), 400
+
+        try:
+            from tempfile import NamedTemporaryFile
+            import joblib
+
+            with NamedTemporaryFile(delete=False) as tmp:
+                file.save(tmp.name)
+                loaded = joblib.load(tmp.name)
+
+            if not isinstance(loaded, tuple) or len(loaded) != 2:
+                return jsonify({"error": "Model format invalid. Expected (model, scaler) tuple."}), 400
+
+            model, scaler = loaded
+
+            if not isinstance(model, lgb.LGBMClassifier) or not isinstance(scaler, StandardScaler):
+                return jsonify({"error": "Incorrect model or scaler type."}), 400
+
+            joblib.dump((model, scaler), "radar_lightgbm_model.pkl")
+            score = model.score(model.booster_.data, model.booster_.label)
+            save_model_metadata(round(score * 100, 2), "upload")
+            return jsonify({"status": "ok", "message": "Model uploaded and validated successfully."})
+
+        except Exception as e:
+            logger.exception("[MODEL UPLOAD ERROR]")
+            return jsonify({"error": "Upload failed", "details": str(e)}), 500
+    
     @app.route("/control", methods=["GET", "POST"])
     @login_required
     def control():
@@ -1018,6 +1221,17 @@ def create_app():
         
         message = None
         config = load_config()
+        try:
+            cameras, selected = load_cameras_from_db()
+            for cam in cameras:
+                if "stream_type" not in cam:
+                    cam["stream_type"] = "mjpeg"  # default fallback
+            config["cameras"] = cameras
+            config["selected_camera"] = selected
+        except Exception as e:
+            logger.warning(f"Could not load cameras from DB: {e}")
+            config["cameras"] = []
+            config["selected_camera"] = 0
         snapshot = None
         
         if request.method == "POST":
@@ -1110,17 +1324,52 @@ def create_app():
                     
                 elif action == "test_camera":
                     try:
-                        test_path = capture_snapshot(
-                            camera_url="http://192.168.1.241/axis-cgi/jpg/image.cgi",
-                            username="root",
-                            password="2024",
-                            timeout=3
-                        )
-                        if test_path and os.path.exists(test_path) and os.path.getsize(test_path) > 1024:
+                        selected = config.get("selected_camera", 0)
+                        cam = config.get("cameras", [{}])[selected] if isinstance(config.get("cameras"), list) else {}
+                        url = cam.get("url", "")
+                        username = cam.get("username", "")
+                        password = cam.get("password", "")
+                        stream_type = cam.get("stream_type", "mjpeg")
+                        auth = HTTPDigestAuth(username, password) if username and password else None
+
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        test_filename = f"test_{timestamp}.jpg"
+                        test_path = os.path.join(SNAPSHOT_FOLDER, test_filename)
+                        response = None
+
+                        if stream_type == "snapshot":
+                            response = requests.get(url, auth=auth, timeout=5)
+                            if response.status_code == 200 and response.content.startswith(b'\xff\xd8'):
+                                with open(test_path, "wb") as f:
+                                    f.write(response.content)
+
+                        elif stream_type == "mjpeg":
+                            r = requests.get(url, auth=auth, stream=True, timeout=5)
+                            buffer = b""
+                            for chunk in r.iter_content(1024):
+                                buffer += chunk
+                                start = buffer.find(b'\xff\xd8')
+                                end = buffer.find(b'\xff\xd9')
+                                if start != -1 and end != -1 and end > start:
+                                    frame = buffer[start:end+2]
+                                    with open(test_path, "wb") as f:
+                                        f.write(frame)
+                                    break
+                            r.close()
+
+                        elif stream_type == "rtsp":
+                            result = subprocess.run([
+                                "ffmpeg", "-y", "-rtsp_transport", "tcp",
+                                "-i", url,
+                                "-vframes", "1", "-q:v", "2", test_path
+                            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+
+                        if os.path.exists(test_path) and os.path.getsize(test_path) > 1024:
                             snapshot = os.path.basename(test_path)
-                            message = "Camera test successful. Live snapshot captured."
+                            message = "Camera test successful. Snapshot captured."
                         else:
                             message = "Camera test failed — no image returned."
+
                     except Exception as e:
                         logger.error(f"[CAMERA TEST] {e}")
                         message = f"Camera test error: {e}"
@@ -1129,8 +1378,32 @@ def create_app():
                     config["cooldown_seconds"] = float(request.form.get("cooldown_seconds", 0.5))
                     config["retention_days"] = int(request.form.get("retention_days", 30))
                     config["selected_camera"] = int(request.form.get("selected_camera", 0))
+                    config["annotation_conf_threshold"] = float(request.form.get("annotation_conf_threshold", 0.5))
+                    config["label_format"] = request.form.get("label_format", "{type} | {speed:.1f} km/h")
 
-                    # Handle dynamic per-class speed limits
+                    # Parse all camera fields
+                    cameras = []
+                    i = 0
+                    while True:
+                        cam_url = request.form.get(f"camera_url_{i}")
+                        if not cam_url:
+                            break
+                        cam_username = request.form.get(f"camera_username_{i}", "")
+                        cam_password = request.form.get(f"camera_password_{i}", "")
+                        cam_type = request.form.get(f"camera_stream_type_{i}", "mjpeg")
+                        cameras.append({
+                            "url": cam_url.strip(),
+                            "username": cam_username.strip(),
+                            "password": cam_password.strip(),
+                            "stream_type": cam_type.strip()
+                        })
+                        i += 1
+
+                    if cameras:
+                        config["cameras"] = cameras
+                        save_cameras_to_db(cameras, config.get("selected_camera", 0))
+
+                    # Dynamic speed limits
                     updated_limits = {}
                     for key in config.get("dynamic_speed_limits", {}).keys():
                         form_key = f"speed_limit_{key}"
@@ -1139,14 +1412,11 @@ def create_app():
                             try:
                                 updated_limits[key] = float(val)
                             except ValueError:
-                                pass  # keep previous if input was invalid
+                                pass  # retain old
 
                     if updated_limits:
                         config["dynamic_speed_limits"] = updated_limits
 
-                    config["annotation_conf_threshold"] = float(request.form.get("annotation_conf_threshold", 0.5))
-                    config["label_format"] = request.form.get("label_format", "{type} | {speed:.1f} km/h")
-                    
                     if save_config(config):
                         message = "Configuration updated successfully."
                     else:
@@ -1183,18 +1453,52 @@ def create_app():
         except Exception:
             radar_ok = False
 
-        try:
-            cam_test = capture_snapshot(
-                camera_url="http://192.168.1.241/axis-cgi/jpg/image.cgi",
-                username="root",
-                password="2024",
-                timeout=2
-            )
-            camera_ok = cam_test is not None and os.path.exists(cam_test)
-            if camera_ok:
-                os.remove(cam_test)
-        except Exception:
-            camera_ok = False
+        cams = config.get("cameras", [])
+        selected = config.get("selected_camera", 0)
+        cam = cams[selected] if cams and selected < len(cams) else {}
+        stream_type = cam.get("stream_type", "mjpeg")
+        camera_ok = False
+
+        should_check_camera = action != "test_camera" if request.method == "POST" else True
+
+        if should_check_camera:
+            try:
+                url = cam.get("url", "")
+                username = cam.get("username", "")
+                password = cam.get("password", "")
+                if stream_type == "rtsp":
+                    if url.startswith("rtsp://") and "@" not in url and username and password:
+                        url = url.replace("rtsp://", f"rtsp://{username}:{password}@")
+
+                    logger.info(f"[CONTROL CAMERA TEST] RTSP URL: {url}")
+                    result = subprocess.run(
+                        ["ffmpeg", "-rtsp_transport", "tcp", "-i", url, "-t", "1", "-f", "null", "-"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=5
+                    )
+                    camera_ok = (result.returncode == 0)
+
+                elif stream_type == "mjpeg":
+                    r = requests.get(url, auth=HTTPDigestAuth(username, password), stream=True, timeout=5)
+                    if r.status_code == 200:
+                        buffer = b""
+                        for chunk in r.iter_content(1024):
+                            buffer += chunk
+                            if b'\xff\xd8' in buffer and b'\xff\xd9' in buffer:
+                                camera_ok = True
+                                break
+                    r.close()
+
+                elif stream_type == "snapshot":
+                    r = requests.get(url, auth=HTTPDigestAuth(username, password), timeout=5)
+                    if r.status_code == 200 and r.content.startswith(b'\xff\xd8'):
+                        camera_ok = True
+
+                logger.info(f"[CONTROL CAMERA TEST RESULT] camera_ok = {camera_ok}")
+
+            except Exception as e:
+                logger.warning(f"[CONTROL CAMERA TEST] Unexpected failure: {e}")
 
         try:
             return render_template("control.html",
@@ -1205,12 +1509,14 @@ def create_app():
                 snapshot_records=snapshot_records,
                 snapshot=snapshot,
                 radar_status=radar_ok,
-                camera_status=camera_ok
+                camera_status=camera_ok,
+                model_info=get_model_metadata()
             )
         except Exception as e:
             import traceback
             logger.error(f"[CONTROL PAGE ERROR] {e}\n{traceback.format_exc()}")
             return f"<pre>{traceback.format_exc()}</pre>", 500
+
     
     @app.route("/users", methods=["GET", "POST"])
     @login_required

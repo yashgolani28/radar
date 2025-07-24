@@ -8,18 +8,34 @@ class OPS243CRadar:
         self.ser = None
         self.running = False
 
-    def connect(self):
-        try:
-            self.ser = serial.Serial(self.port, self.baudrate, timeout=1)
-            if self.ser.is_open:
-                self.ser.reset_input_buffer()
-                self.ser.reset_output_buffer()
-                print("Radar connected.")
-                return True
-            else:
-                print("Serial port opened but not readable.")
-        except Exception as e:
-            print(f"Failed to connect to radar: {e}")
+    def connect(self, retries=5, delay=1.0):
+        import subprocess
+        for attempt in range(retries):
+            try:
+                if self.ser and self.ser.is_open:
+                    self.ser.close()
+                    time.sleep(0.2)
+
+                self.ser = serial.Serial(self.port, self.baudrate, timeout=1)
+                if self.ser.is_open:
+                    print(f"Radar connected on {self.port}")
+
+                    # Reset buffers
+                    self.ser.reset_input_buffer()
+                    self.ser.reset_output_buffer()
+                    time.sleep(0.1)          
+
+                    return True
+
+            except Exception as e:
+                print(f"[Radar Connect] Attempt {attempt + 1} failed: {e}")
+                time.sleep(delay)
+                delay *= 1.5
+
+                if attempt >= 2 and self.port.startswith("/dev/ttyACM"):
+                    print("[Radar Connect] Attempting USB reset...")
+                    subprocess.call(["usbreset", self.port])  
+
         self.ser = None
         return False
 

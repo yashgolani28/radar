@@ -2,8 +2,8 @@
 {% block title %}Snapshot Gallery{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-     <h2 class="text-white fw-bold">Detection Gallery</h2>
-    <span class="badge bg-info fs-6">{{ snapshots|length }} Images</span>
+    <h2 class="fw-bold" style="color: var(--text-color);">Detection Gallery</h2>
+    <span class="badge bg-info text-dark">{{ snapshots|length }} Images</span>
 </div>
 
 <!-- Filters -->
@@ -29,7 +29,7 @@
                 <label class="form-label">Object Type</label>
                 <select name="type" class="form-select">
                     <option value="">All Types</option>
-                    {% for opt in ['VEHICLE', 'HUMAN', 'CAR', 'TRUCK', 'BIKE'] %}
+                    {% for opt in ['VEHICLE', 'HUMAN', 'CAR', 'TRUCK', 'BIKE', 'UNKNOWN'] %}
                         <option value="{{ opt }}" {% if request.args.get('type') == opt %}selected{% endif %}>
                             {{ opt.title() }}
                         </option>

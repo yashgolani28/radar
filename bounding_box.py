@@ -28,7 +28,7 @@ def annotate_speeding_object(image_path, radar_distance, label=None, save_dir="s
         print(f"[ERROR] Failed to read image: {image_path}")
         return None, None, None
 
-    results = model(source=cv2.resize(img, (320, 320)), imgsz=320)[0]
+    results = model(source=img, imgsz=640)[0]
     h, w = img.shape[:2]
     best_box = None
     highest_confidence = 0.0

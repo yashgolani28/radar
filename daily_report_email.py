@@ -5,6 +5,8 @@ from app import get_db_connection, load_config
 from report import generate_pdf_report
 from datetime import datetime
 import requests
+import psycopg2
+import psycopg2.extras
 
 # 1. Generate the report
 filename = f"radar_daily_report_{datetime.now().strftime('%Y%m%d')}.pdf"

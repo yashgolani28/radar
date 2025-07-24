@@ -11,7 +11,13 @@ def load_config():
         "speed_limit_kmh": 3.0,
         "annotation_conf_threshold": 0.5,
         "label_format": "{type} | {speed:.1f} km/h",
-        "cameras": ["Camera 1", "Camera 2", "Camera 3"],
+        "cameras": [
+            {
+                "url": "",
+                "username": "",
+                "password": ""
+            }
+        ],
         "dynamic_speed_limits": {
             "default": 3.0,
             "HUMAN": 4.0,
@@ -29,6 +35,11 @@ def load_config():
             for key, value in default_config.items():
                 if key not in config:
                     config[key] = value
+
+            # Ensure cameras is a list of dicts with proper keys
+            if not isinstance(config.get("cameras"), list) or not all(isinstance(cam, dict) for cam in config["cameras"]):
+                config["cameras"] = default_config["cameras"]
+
             return config
     except (FileNotFoundError, json.JSONDecodeError):
         return default_config
