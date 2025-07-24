@@ -1,10 +1,43 @@
+# Python cache and compiled files
 __pycache__/
 *.pyc
-*.db
-*.log
+*.pyo
+
+# Logs and runtime artifacts
 logs/
+*.log
+*.jpg
+*.png
+*.mjpeg
+
+# Snapshots and temp image folders
 snapshots/
+test_snapshots/
+live.jpg
+
+# Backups and exported data
 backups/
-.env
-config.json
+*.db
+*.csv
+*.sql
+
+# ML models
 *.pkl
+*.pt
+
+# Local config
+app_config.json
+
+# Binary or compiled objects
+*.o
+usbreset
+
+# Environment files
+.env
+*.env
+
+# Editor/IDE metadata
+.vscode/
+.idea/
+.DS_Store
+
